@@ -21,6 +21,15 @@ jobs:
         with:
           python-version: "3.12"
 
+      - name: Ver archivos
+        run: |
+          echo "=== CARPETA ACTUAL ==="
+          pwd
+          echo "=== ARCHIVOS ==="
+          ls -la
+          echo "=== ARCHIVOS DEL REPOSITORIO ==="
+          find . -maxdepth 3 -type f
+
       - name: Ejecutar monitor
         env:
           DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
@@ -33,3 +42,4 @@ jobs:
           git add state.json
           git diff --cached --quiet || git commit -m "Actualizar estado de stock"
           git push
+      
