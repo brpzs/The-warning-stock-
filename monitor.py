@@ -12,7 +12,8 @@ WEBHOOKS = [
 BASE_URL = "https://thewarningband.com"
 ARCHIVO_ESTADO = "estado.json"
 
-TIPO_DE_CAMBIO_ARS = 1520.00
+# Valor por defecto si la API falla
+TIPO_DE_CAMBIO_FALLBACK = 1520.00
 
 VINILOS = [
     {
@@ -32,6 +33,21 @@ VINILOS = [
 headers = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 }
+
+def obtener_tipo_de_cambio_ars():
+    """Consulta la cotización actual del Dólar Tarjeta en ARS desde DolarApi"""
+    try:
+        # Puedes cambiar 'tarjeta' por 'oficial', 'mep', o 'blue' si prefieres otra cotización
+        res = requests.get("https://dolarapi.com/v1/dolares/tarjeta", timeout=5)
+        if res.status_code == 200:
+            datos = res.json()
+            cotizacion = float(datos.get("venta", 0))
+            if cotizacion > 0:
+                print(f"💱 Cotización Dólar Tarjeta obtenida: ${cotizacion:,.2f} ARS")
+                return cotizacion
+    except Exception as e:
+        print(f"⚠️ No se pudo obtener el dólar en tiempo real ({e}). Usando valor por defecto.")
+    return TIPO_DE_CAMBIO_FALLBACK
 
 def cargar_estado_anterior():
     if os.path.exists(ARCHIVO_ESTADO):
@@ -74,15 +90,18 @@ def obtener_datos_producto_shopify(handle):
         print(f"Error extrayendo datos JSON de {handle}: {e}")
     return False, 0.0
 
-def formatear_precio(precio_usd):
+def formatear_precio(precio_usd, tipo_cambio):
     if precio_usd > 0:
-        precio_ars = precio_usd * TIPO_DE_CAMBIO_ARS
+        precio_ars = precio_usd * tipo_cambio
         return f"💵 **${precio_usd:.2f} USD** *(~${precio_ars:,.0f} ARS)*"
     return "Precio N/A"
 
 def verificar_estado():
     es_prueba_manual = os.environ.get("GITHUB_EVENT_NAME") == "workflow_dispatch"
     
+    # Obtener el tipo de cambio al día de hoy
+    tipo_cambio_actual = obtener_tipo_de_cambio_ars()
+
     estado_anterior = cargar_estado_anterior()
     estado_actual = {}
     hay_cambios = False
@@ -93,7 +112,7 @@ def verificar_estado():
     for prod in VINILOS:
         disponible, precio_usd = obtener_datos_producto_shopify(prod["handle"])
         estado_actual[prod["id"]] = disponible
-        info_precio = formatear_precio(precio_usd)
+        info_precio = formatear_precio(precio_usd, tipo_cambio_actual)
         
         estaba_disponible = estado_anterior.get(prod["id"])
         if estaba_disponible != disponible:
