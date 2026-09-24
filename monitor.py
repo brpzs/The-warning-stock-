@@ -1,10 +1,13 @@
 import os
-import sys
 import json
 import requests
 from bs4 import BeautifulSoup
 
-DISCORD_WEBHOOK_URL = os.environ.get("DISCORD_WEBHOOK")
+# Traer todas las URLs configuradas
+WEBHOOKS = [
+    os.environ.get("DISCORD_WEBHOOK"),
+    os.environ.get("DISCORD_WEBHOOK_2")
+]
 
 BASE_URL = "https://thewarningband.com"
 ARCHIVO_ESTADO = "estado.json"
@@ -44,9 +47,17 @@ def guardar_estado_actual(estado):
         json.dump(estado, f, indent=4, ensure_ascii=False)
 
 def enviar_discord(mensaje):
-    if DISCORD_WEBHOOK_URL:
-        payload = {"content": mensaje}
-        requests.post(DISCORD_WEBHOOK_URL, json=payload)
+    payload = {"content": mensaje}
+    for url in WEBHOOKS:
+        if url:
+            try:
+                res = requests.post(url, json=payload)
+                if res.status_code in [200, 204]:
+                    print("✅ Mensaje enviado exitosamente a un servidor.")
+                else:
+                    print(f"⚠️ Error al enviar a servidor ({res.status_code}): {res.text}")
+            except Exception as e:
+                print(f"❌ Excepción enviando a Webhook: {e}")
 
 def obtener_datos_producto_shopify(handle):
     try:
@@ -70,7 +81,6 @@ def formatear_precio(precio_usd):
     return "Precio N/A"
 
 def verificar_estado():
-    # Detectar si fue lanzado manualmente desde GitHub Actions
     es_prueba_manual = os.environ.get("GITHUB_EVENT_NAME") == "workflow_dispatch"
     
     estado_anterior = cargar_estado_anterior()
@@ -138,13 +148,12 @@ def verificar_estado():
     except Exception as e:
         print(f"Error al revisar catálogo de CDs: {e}")
 
-    # Decidir si se envía notificación a Discord
+    # Notificar si es prueba manual o si hubo cambio de estado
     if es_prueba_manual or hay_cambios:
         encabezado = "🧪 **[PRUEBA MANUAL] Reporte Actual de Stock:**" if es_prueba_manual else "🚨 **¡Novedades de Stock detectadas!**"
         
         mensaje_final = f"@everyone {encabezado}\n\n" + "\n\n".join(reporte_lineas)
         enviar_discord(mensaje_final)
-        print("Notificación enviada a Discord exitosamente.")
     else:
         print("Sin cambios de estado en la revisión automática. No se envió mensaje.")
 
