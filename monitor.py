@@ -7,14 +7,20 @@ DISCORD_WEBHOOK_URL = os.environ.get("DISCORD_WEBHOOK")
 
 BASE_URL = "https://thewarningband.com"
 
-# Vinilos con sus URLs fijas
+# Tasa de cambio estimada para la conversión (USD -> ARS)
+# Modifica este valor según la cotización que prefieras (ej. Tarjeta/MEP)
+TIPO_DE_CAMBIO_ARS = 1520.00
+
+# Vinilos con sus nombres de producto en Shopify
 VINILOS = [
     {
         "nombre": "Queen of the Murder Scene (Vinilo)",
+        "handle": "queen-of-the-murder-scene-vinyl",
         "url": f"{BASE_URL}/products/queen-of-the-murder-scene-vinyl"
     },
     {
         "nombre": "XXI Century Blood (Vinilo)",
+        "handle": "century-blood-vinyl",
         "url": f"{BASE_URL}/products/century-blood-vinyl"
     }
 ]
@@ -28,27 +34,40 @@ def enviar_discord(mensaje):
         payload = {"content": mensaje}
         requests.post(DISCORD_WEBHOOK_URL, json=payload)
 
+def obtener_datos_producto_shopify(handle):
+    """Consulta los datos JSON nativos del producto en Shopify"""
+    try:
+        url_json = f"{BASE_URL}/products/{handle}.json"
+        res = requests.get(url_json, headers=headers, timeout=10)
+        if res.status_code == 200:
+            datos = res.json().get("product", {})
+            variantes = datos.get("variants", [])
+            if variantes:
+                precio_usd = float(variantes[0].get("price", 0))
+                disponible = any(v.get("available", False) for v in variantes)
+                return disponible, precio_usd
+    except Exception as e:
+        print(f"Error extrayendo datos JSON de {handle}: {e}")
+    return False, 0.0
+
+def formatear_precio(precio_usd):
+    if precio_usd > 0:
+        precio_ars = precio_usd * TIPO_DE_CAMBIO_ARS
+        return f"💵 **${precio_usd:.2f} USD** *(~${precio_ars:,.0f} ARS)*"
+    return "Precio N/A"
+
 def verificar_estado():
-    reporte = ["📊 **ESTADO DE STOCK (The Warning)**\n"]
+    reporte = ["📊 **ESTADO DE STOCK Y PRECIOS (The Warning)**\n"]
     
     # 1. Revisar Vinilos
     for prod in VINILOS:
-        try:
-            res = requests.get(prod["url"], headers=headers, timeout=10)
-            if res.status_code == 200:
-                soup = BeautifulSoup(res.text, "html.parser")
-                texto = soup.get_text().lower()
-                boton_agregar = soup.find("button", {"name": "add"})
-                esta_agotado = "sold out" in texto or "agotado" in texto
-                
-                if boton_agregar and not esta_agotado:
-                    reporte.append(f"🟢 **[{prod['nombre']}]({prod['url']})**: ¡DISPONIBLE! 🛒")
-                else:
-                    reporte.append(f"🔴 **[{prod['nombre']}]({prod['url']})**: Agotado")
-            else:
-                reporte.append(f"🔴 **[{prod['nombre']}]({prod['url']})**: Página no activa / No disponible")
-        except Exception as e:
-            reporte.append(f"⚠️ Error revisando {prod['nombre']}: {e}")
+        disponible, precio_usd = obtener_datos_producto_shopify(prod["handle"])
+        info_precio = formatear_precio(precio_usd)
+        
+        if disponible:
+            reporte.append(f"🟢 **[{prod['nombre']}]({prod['url']})**: ¡DISPONIBLE! 🛒\n   └ Precio: {info_precio}")
+        else:
+            reporte.append(f"🔴 **[{prod['nombre']}]({prod['url']})**: Agotado\n   └ Precio: {info_precio}")
 
     # 2. Revisar la sección de música buscando CDs PUBLICADOS
     try:
@@ -56,7 +75,6 @@ def verificar_estado():
         res = requests.get(url_musica, headers=headers, timeout=10)
         soup = BeautifulSoup(res.text, "html.parser")
         
-        # Buscar enlaces directos a productos
         enlaces_productos = soup.find_all("a", href=True)
         
         url_cd_qotms = None
