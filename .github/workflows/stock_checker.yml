@@ -7,7 +7,7 @@ on:
   workflow_dispatch: # Permite probarlo manualmente cuando quieras
 
 permissions:
-  contents: write # Permite guardar el estado en el repositorio
+  contents: write # Permite guardar el archivo estado.json
 
 jobs:
   check-stock:
@@ -30,6 +30,8 @@ jobs:
     - name: Ejecutar script
       env:
         DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
+        DISCORD_WEBHOOK_2: ${{ secrets.DISCORD_WEBHOOK_2 }}
+        GITHUB_EVENT_NAME: ${{ github.event_name }}
       run: python monitor.py
 
     - name: Guardar estado actualizado en el repositorio
