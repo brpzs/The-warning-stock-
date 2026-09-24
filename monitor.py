@@ -1,15 +1,14 @@
 import os
+import sys
 import json
 import requests
 from bs4 import BeautifulSoup
 
-# Traer la URL secreta de Discord desde Secrets
 DISCORD_WEBHOOK_URL = os.environ.get("DISCORD_WEBHOOK")
 
 BASE_URL = "https://thewarningband.com"
 ARCHIVO_ESTADO = "estado.json"
 
-# Tasa de cambio estimada (USD -> ARS)
 TIPO_DE_CAMBIO_ARS = 1520.00
 
 VINILOS = [
@@ -71,9 +70,14 @@ def formatear_precio(precio_usd):
     return "Precio N/A"
 
 def verificar_estado():
+    # Detectar si fue lanzado manualmente desde GitHub Actions
+    es_prueba_manual = os.environ.get("GITHUB_EVENT_NAME") == "workflow_dispatch"
+    
     estado_anterior = cargar_estado_anterior()
     estado_actual = {}
-    cambios_detectados = []
+    hay_cambios = False
+
+    reporte_lineas = []
 
     # 1. Revisar Vinilos
     for prod in VINILOS:
@@ -81,28 +85,20 @@ def verificar_estado():
         estado_actual[prod["id"]] = disponible
         info_precio = formatear_precio(precio_usd)
         
-        # Comparar con el estado anterior
-        estaba_disponible = estado_anterior.get(prod["id"], None)
-        
+        estaba_disponible = estado_anterior.get(prod["id"])
         if estaba_disponible != disponible:
-            if disponible:
-                cambios_detectados.append(
-                    f"🟢 **CAMBIO DE ESTADO:** ¡AHORA HAY STOCK! 🛒\n"
-                    f"👉 **[{prod['nombre']}]({prod['url']})**\n"
-                    f"   └ Precio: {info_precio}"
-                )
-            elif estaba_disponible is not None:
-                cambios_detectados.append(
-                    f"🔴 **CAMBIO DE ESTADO:** Se agotó el stock.\n"
-                    f"👉 **[{prod['nombre']}]({prod['url']})**"
-                )
+            hay_cambios = True
+
+        if disponible:
+            reporte_lineas.append(f"🟢 **[{prod['nombre']}]({prod['url']})**: ¡DISPONIBLE! 🛒\n   └ Precio: {info_precio}")
+        else:
+            reporte_lineas.append(f"🔴 **[{prod['nombre']}]({prod['url']})**: Agotado\n   └ Precio: {info_precio}")
 
     # 2. Revisar la sección de música buscando CDs PUBLICADOS
     try:
         url_musica = f"{BASE_URL}/collections/music"
         res = requests.get(url_musica, headers=headers, timeout=10)
         soup = BeautifulSoup(res.text, "html.parser")
-        
         enlaces_productos = soup.find_all("a", href=True)
         
         url_cd_qotms = None
@@ -120,32 +116,38 @@ def verificar_estado():
         # CD QOTMS
         qotms_cd_disponible = url_cd_qotms is not None
         estado_actual["qotms_cd"] = qotms_cd_disponible
-        if estado_anterior.get("qotms_cd", None) != qotms_cd_disponible:
-            if qotms_cd_disponible:
-                cambios_detectados.append(f"🟢 **CAMBIO DE ESTADO:** ¡CD PUBLICADO!\n👉 **[Queen of the Murder Scene (CD)]({url_cd_qotms})**")
-            elif estado_anterior.get("qotms_cd") is not None:
-                cambios_detectados.append(f"🔴 **CAMBIO DE ESTADO:** CD retirado o agotado.\n👉 **[Queen of the Murder Scene (CD)]({url_musica})**")
+        if estado_anterior.get("qotms_cd") != qotms_cd_disponible:
+            hay_cambios = True
+
+        if qotms_cd_disponible:
+            reporte_lineas.append(f"🟢 **[Queen of the Murder Scene (CD)]({url_cd_qotms})**: ¡DISPONIBLE!")
+        else:
+            reporte_lineas.append(f"🔴 **[Queen of the Murder Scene (CD)]({url_musica})**: No disponible")
 
         # CD XXI Century Blood
         xxicb_cd_disponible = url_cd_xxicb is not None
         estado_actual["xxicb_cd"] = xxicb_cd_disponible
-        if estado_anterior.get("xxicb_cd", None) != xxicb_cd_disponible:
-            if xxicb_cd_disponible:
-                cambios_detectados.append(f"🟢 **CAMBIO DE ESTADO:** ¡CD PUBLICADO!\n👉 **[XXI Century Blood (CD)]({url_cd_xxicb})**")
-            elif estado_anterior.get("xxicb_cd") is not None:
-                cambios_detectados.append(f"🔴 **CAMBIO DE ESTADO:** CD retirado o agotado.\n👉 **[XXI Century Blood (CD)]({url_musica})**")
+        if estado_anterior.get("xxicb_cd") != xxicb_cd_disponible:
+            hay_cambios = True
+
+        if xxicb_cd_disponible:
+            reporte_lineas.append(f"🟢 **[XXI Century Blood (CD)]({url_cd_xxicb})**: ¡DISPONIBLE!")
+        else:
+            reporte_lineas.append(f"🔴 **[XXI Century Blood (CD)]({url_musica})**: No disponible")
 
     except Exception as e:
-        print(f"Error al revisar el catálogo de CDs: {e}")
+        print(f"Error al revisar catálogo de CDs: {e}")
 
-    # Si hay cambios registrados, notificar a Discord mencionando a @everyone
-    if cambios_detectados:
-        mensaje_final = "@everyone 🚨 **¡Novedades en el stock de The Warning!** 🚨\n\n" + "\n\n".join(cambios_detectados)
+    # Decidir si se envía notificación a Discord
+    if es_prueba_manual or hay_cambios:
+        encabezado = "🧪 **[PRUEBA MANUAL] Reporte Actual de Stock:**" if es_prueba_manual else "🚨 **¡Novedades de Stock detectadas!**"
+        
+        mensaje_final = f"@everyone {encabezado}\n\n" + "\n\n".join(reporte_lineas)
         enviar_discord(mensaje_final)
+        print("Notificación enviada a Discord exitosamente.")
     else:
-        print("Sin cambios en el estado del stock.")
+        print("Sin cambios de estado en la revisión automática. No se envió mensaje.")
 
-    # Guardar estado actual para la siguiente ejecución
     guardar_estado_actual(estado_actual)
 
 if __name__ == "__main__":
