@@ -3,16 +3,19 @@ import json
 import requests
 from bs4 import BeautifulSoup
 
-# Traer todas las URLs configuradas
+# URLs de Discord y Credenciales de Telegram desde Secrets
 WEBHOOKS = [
     os.environ.get("DISCORD_WEBHOOK"),
     os.environ.get("DISCORD_WEBHOOK_2")
 ]
 
+TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
+TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID")
+
 BASE_URL = "https://thewarningband.com"
 ARCHIVO_ESTADO = "estado.json"
 
-# Valor por defecto si la API falla
+# Valor por defecto si la API de dólares no responde
 TIPO_DE_CAMBIO_FALLBACK = 1520.00
 
 VINILOS = [
@@ -35,18 +38,17 @@ headers = {
 }
 
 def obtener_tipo_de_cambio_ars():
-    """Consulta la cotización actual del Dólar Tarjeta en ARS desde DolarApi"""
+    """Consulta la cotización actual del Dólar Tarjeta desde DolarApi"""
     try:
-        # Puedes cambiar 'tarjeta' por 'oficial', 'mep', o 'blue' si prefieres otra cotización
         res = requests.get("https://dolarapi.com/v1/dolares/tarjeta", timeout=5)
         if res.status_code == 200:
             datos = res.json()
             cotizacion = float(datos.get("venta", 0))
             if cotizacion > 0:
-                print(f"💱 Cotización Dólar Tarjeta obtenida: ${cotizacion:,.2f} ARS")
+                print(f"💱 Cotización Dólar Tarjeta: ${cotizacion:,.2f} ARS")
                 return cotizacion
     except Exception as e:
-        print(f"⚠️ No se pudo obtener el dólar en tiempo real ({e}). Usando valor por defecto.")
+        print(f"⚠️ Error obteniendo cotización del dólar ({e}). Usando valor por defecto.")
     return TIPO_DE_CAMBIO_FALLBACK
 
 def cargar_estado_anterior():
@@ -69,11 +71,29 @@ def enviar_discord(mensaje):
             try:
                 res = requests.post(url, json=payload)
                 if res.status_code in [200, 204]:
-                    print("✅ Mensaje enviado exitosamente a un servidor.")
+                    print("✅ Mensaje enviado exitosamente a servidor de Discord.")
                 else:
-                    print(f"⚠️ Error al enviar a servidor ({res.status_code}): {res.text}")
+                    print(f"⚠️ Error al enviar a Discord ({res.status_code}): {res.text}")
             except Exception as e:
-                print(f"❌ Excepción enviando a Webhook: {e}")
+                print(f"❌ Excepción enviando a Discord: {e}")
+
+def enviar_telegram(mensaje):
+    if TELEGRAM_TOKEN and TELEGRAM_CHAT_ID:
+        url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
+        payload = {
+            "chat_id": TELEGRAM_CHAT_ID,
+            "text": mensaje,
+            "parse_mode": "Markdown",
+            "disable_web_page_preview": True
+        }
+        try:
+            res = requests.post(url, json=payload, timeout=10)
+            if res.status_code == 200:
+                print("✅ Mensaje enviado exitosamente a Telegram.")
+            else:
+                print(f"⚠️ Error enviando a Telegram ({res.status_code}): {res.text}")
+        except Exception as e:
+            print(f"❌ Excepción enviando a Telegram: {e}")
 
 def obtener_datos_producto_shopify(handle):
     try:
@@ -98,8 +118,6 @@ def formatear_precio(precio_usd, tipo_cambio):
 
 def verificar_estado():
     es_prueba_manual = os.environ.get("GITHUB_EVENT_NAME") == "workflow_dispatch"
-    
-    # Obtener el tipo de cambio al día de hoy
     tipo_cambio_actual = obtener_tipo_de_cambio_ars()
 
     estado_anterior = cargar_estado_anterior()
@@ -171,10 +189,13 @@ def verificar_estado():
     if es_prueba_manual or hay_cambios:
         encabezado = "🧪 **[PRUEBA MANUAL] Reporte Actual de Stock:**" if es_prueba_manual else "🚨 **¡Novedades de Stock detectadas!**"
         
-        mensaje_final = f"@everyone {encabezado}\n\n" + "\n\n".join(reporte_lineas)
-        enviar_discord(mensaje_final)
+        mensaje_discord = f"@everyone {encabezado}\n\n" + "\n\n".join(reporte_lineas)
+        mensaje_telegram = f"{encabezado}\n\n" + "\n\n".join(reporte_lineas)
+        
+        enviar_discord(mensaje_discord)
+        enviar_telegram(mensaje_telegram)
     else:
-        print("Sin cambios de estado en la revisión automática. No se envió mensaje.")
+        print("Sin cambios de estado en la revisión automática. No se enviaron mensajes.")
 
     guardar_estado_actual(estado_actual)
 
