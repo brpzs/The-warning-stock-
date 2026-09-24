@@ -31,6 +31,8 @@ jobs:
       env:
         DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
         DISCORD_WEBHOOK_2: ${{ secrets.DISCORD_WEBHOOK_2 }}
+        TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+        TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         GITHUB_EVENT_NAME: ${{ github.event_name }}
       run: python monitor.py
 
