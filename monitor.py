@@ -2,74 +2,89 @@ import os
 import requests
 from bs4 import BeautifulSoup
 
-# Configuración del Webhook guardado en GitHub Secrets
+# Traer la URL secreta de Discord
 DISCORD_WEBHOOK_URL = os.environ.get("DISCORD_WEBHOOK")
 
-PRODUCTOS = [
+BASE_URL = "https://thewarningband.com"
+
+# Vinilos con sus URLs fijas
+VINILOS = [
     {
         "nombre": "Queen of the Murder Scene (Vinilo)",
-        "url": "https://thewarningband.com/products/queen-of-the-murder-scene-vinyl"
+        "url": f"{BASE_URL}/products/queen-of-the-murder-scene-vinyl"
     },
     {
         "nombre": "XXI Century Blood (Vinilo)",
-        "url": "https://thewarningband.com/products/century-blood-vinyl"
+        "url": f"{BASE_URL}/products/century-blood-vinyl"
     }
 ]
 
 headers = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36"
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 }
 
 def enviar_discord(mensaje):
-    """Envía mensaje al canal de Discord usando el Webhook"""
     if DISCORD_WEBHOOK_URL:
         payload = {"content": mensaje}
         requests.post(DISCORD_WEBHOOK_URL, json=payload)
-    else:
-        print("Error: No se encontró la URL del Webhook de Discord.")
 
 def verificar_estado():
-    reporte = ["📊 **REPORTE DE STOCK ACTUAL (The Warning)**\n"]
+    reporte = ["📊 **ESTADO DE STOCK (The Warning)**\n"]
     
     # 1. Revisar Vinilos
-    for prod in PRODUCTOS:
+    for prod in VINILOS:
         try:
             res = requests.get(prod["url"], headers=headers, timeout=10)
-            soup = BeautifulSoup(res.text, "html.parser")
-            
-            texto = soup.get_text().lower()
-            boton_agregar = soup.find("button", {"name": "add"})
-            esta_agotado = "sold out" in texto or "agotado" in texto
-            
-            if boton_agregar and not esta_agotado:
-                reporte.append(f"✅ **{prod['nombre']}**: ¡CON STOCK! 🟢\nEnlace: {prod['url']}")
+            if res.status_code == 200:
+                soup = BeautifulSoup(res.text, "html.parser")
+                texto = soup.get_text().lower()
+                boton_agregar = soup.find("button", {"name": "add"})
+                esta_agotado = "sold out" in texto or "agotado" in texto
+                
+                if boton_agregar and not esta_agotado:
+                    reporte.append(f"🟢 **[{prod['nombre']}]({prod['url']})**: ¡DISPONIBLE! 🛒")
+                else:
+                    reporte.append(f"🔴 **[{prod['nombre']}]({prod['url']})**: Agotado")
             else:
-                reporte.append(f"❌ **{prod['nombre']}**: Agotado 🔴")
+                reporte.append(f"🔴 **[{prod['nombre']}]({prod['url']})**: Página no activa / No disponible")
         except Exception as e:
             reporte.append(f"⚠️ Error revisando {prod['nombre']}: {e}")
 
-    # 2. Revisar si hay CDs en la tienda
+    # 2. Revisar la sección de música buscando CDs PUBLICADOS
     try:
-        url_coleccion = "https://thewarningband.com/collections/music"
-        res = requests.get(url_coleccion, headers=headers, timeout=10)
+        url_musica = f"{BASE_URL}/collections/music"
+        res = requests.get(url_musica, headers=headers, timeout=10)
         soup = BeautifulSoup(res.text, "html.parser")
-        texto = soup.get_text().lower()
+        
+        # Buscar enlaces directos a productos
+        enlaces_productos = soup.find_all("a", href=True)
+        
+        url_cd_qotms = None
+        url_cd_xxicb = None
 
-        cd_qotms = "queen of the murder scene" in texto and "cd" in texto
-        cd_xxicb = ("xxi century blood" in texto or "21st century blood" in texto) and "cd" in texto
+        for a in enlaces_productos:
+            href = a['href']
+            href_lower = href.lower()
+            if "/products/" in href_lower:
+                if "queen" in href_lower and "cd" in href_lower:
+                    url_cd_qotms = href if href.startswith("http") else f"{BASE_URL}{href}"
+                if ("century" in href_lower or "xxicb" in href_lower) and "cd" in href_lower:
+                    url_cd_xxicb = href if href.startswith("http") else f"{BASE_URL}{href}"
 
-        if cd_qotms:
-            reporte.append("✅ **Queen of the Murder Scene (CD)**: ¡Detectado en la tienda! 🟢")
+        # Reporte QOTMS CD
+        if url_cd_qotms:
+            reporte.append(f"🟢 **[Queen of the Murder Scene (CD)]({url_cd_qotms})**: ¡DISPONIBLE!")
         else:
-            reporte.append("❌ **Queen of the Murder Scene (CD)**: No disponible 🔴")
+            reporte.append(f"🔴 **[Queen of the Murder Scene (CD)]({url_musica})**: No disponible")
 
-        if cd_xxicb:
-            reporte.append("✅ **XXI Century Blood (CD)**: ¡Detectado en la tienda! 🟢")
+        # Reporte XXI Century Blood CD
+        if url_cd_xxicb:
+            reporte.append(f"🟢 **[XXI Century Blood (CD)]({url_cd_xxicb})**: ¡DISPONIBLE!")
         else:
-            reporte.append("❌ **XXI Century Blood (CD)**: No disponible 🔴")
+            reporte.append(f"🔴 **[XXI Century Blood (CD)]({url_musica})**: No disponible")
 
     except Exception as e:
-        reporte.append(f"⚠️ Error revisando catálogo de CDs: {e}")
+        reporte.append(f"⚠️ Error al revisar el catálogo de CDs: {e}")
 
     # Enviar reporte consolidado a Discord
     enviar_discord("\n".join(reporte))
