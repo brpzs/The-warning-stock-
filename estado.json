@@ -1,6 +1,6 @@
 {
-    "qotms_vinyl": false,
-    "xxicb_vinyl": false,
-    "qotms_cd": false,
-    "xxicb_cd": false
+    "qotms_vinyl": true,
+    "xxicb_vinyl": true,
+    "qotms_cd": true,
+    "xxicb_cd": true
 }
