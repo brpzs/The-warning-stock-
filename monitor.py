@@ -66,7 +66,8 @@ PRODUCTOS_SHOPIFY = [
 
 headers = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-    "Accept": "application/json, text/plain, */*"
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+    "Accept-Language": "en-US,en;q=0.9,es;q=0.8"
 }
 
 def obtener_tipo_de_cambio_ars():
@@ -128,16 +129,83 @@ def enviar_telegram(mensaje):
             print(f"❌ Excepción enviando a Telegram: {e}")
 
 def revisar_producto_en_tienda(tienda, handle, path):
-    """Consulta la disponibilidad y precio de un producto en una tienda/región específica."""
-    url_json = f"{tienda['base_url']}/products/{handle}.json"
+    """Consulta la disponibilidad y precio de un producto analizando HTML, Schema JSON-LD y JSON de Shopify."""
     url_web = f"{tienda['base_url']}{path}"
+    url_json = f"{tienda['base_url']}/products/{handle}.json"
     
     disponible = False
     precio_usd = 0.0
 
-    # 1. Verificación por la API JSON de Shopify
+    cookies = {}
+    if "country" in tienda.get("params", {}):
+        cookies["localization"] = tienda["params"]["country"]
+
+    # 1. Inspección prioritaria del HTML (Renderizado de Shopify)
     try:
-        res = requests.get(url_json, headers=headers, params=tienda["params"], timeout=8)
+        res_html = requests.get(url_web, headers=headers, params=tienda["params"], cookies=cookies, timeout=10)
+        if res_html.status_code == 200:
+            soup = BeautifulSoup(res_html.text, "html.parser")
+
+            # A) Buscar en scripts de datos structured (JSON-LD)
+            scripts_ld = soup.find_all("script", type="application/ld+json")
+            for script in scripts_ld:
+                if script.string:
+                    try:
+                        data = json.loads(script.string)
+                        # Soporta si viene como lista o diccionario
+                        items = data if isinstance(data, list) else [data]
+                        for item in items:
+                            offers = item.get("offers", [])
+                            if isinstance(offers, dict):
+                                offers = [offers]
+                            for offer in offers:
+                                avail = offer.get("availability", "")
+                                if "InStock" in avail:
+                                    disponible = True
+                                if "price" in offer:
+                                    try:
+                                        precio_usd = float(offer["price"])
+                                    except ValueError:
+                                        pass
+                    except Exception:
+                        pass
+
+            # B) Inspeccionar meta tag og:availability
+            meta_avail = soup.find("meta", property="og:availability") or soup.find("meta", property="product:availability")
+            if meta_avail and meta_avail.get("content"):
+                if "instock" in meta_avail["content"].lower():
+                    disponible = True
+
+            # C) Extraer precio desde meta-tags si no se obtuvo antes
+            if precio_usd == 0.0:
+                meta_precio = soup.find("meta", property="og:price:amount") or soup.find("meta", property="product:price:amount")
+                if meta_precio and meta_precio.get("content"):
+                    try:
+                        precio_usd = float(meta_precio["content"])
+                    except ValueError:
+                        pass
+
+            # D) Inspección de botón 'Añadir al carrito'
+            if not disponible:
+                btn_comprar = (
+                    soup.find("button", {"name": "add"}) or 
+                    soup.find("button", id=lambda x: x and "add-to-cart" in str(x).lower()) or
+                    soup.find("button", class_=lambda x: x and "add-to-cart" in str(x).lower())
+                )
+                if btn_comprar:
+                    texto_btn = btn_comprar.get_text(strip=True).lower()
+                    es_disabled = btn_comprar.has_attr("disabled") or btn_comprar.get("aria-disabled") == "true"
+                    if not es_disabled and "sold out" not in texto_btn and "agotado" not in texto_btn:
+                        disponible = True
+
+            if disponible:
+                return disponible, precio_usd, url_web
+    except Exception as e:
+        print(f"Error consultando HTML para {handle} en {tienda['nombre']}: {e}")
+
+    # 2. Respaldo por la API JSON de Shopify si el HTML no arrojó stock
+    try:
+        res = requests.get(url_json, headers=headers, params=tienda["params"], cookies=cookies, timeout=10)
         if res.status_code == 200:
             datos = res.json().get("product", {})
             variantes = datos.get("variants", [])
@@ -146,34 +214,10 @@ def revisar_producto_en_tienda(tienda, handle, path):
                     disponible = True
                     precio_usd = float(v.get("price", 0))
                     break
-            if not disponible and variantes:
+            if not disponible and variantes and precio_usd == 0.0:
                 precio_usd = float(variantes[0].get("price", 0))
-            if disponible:
-                return disponible, precio_usd, url_web
     except Exception as e:
         print(f"Error consultando JSON para {handle} en {tienda['nombre']}: {e}")
-
-    # 2. Respaldo por HTML si el JSON no dio disponibilidad positiva
-    try:
-        res_html = requests.get(url_web, headers=headers, params=tienda["params"], timeout=8)
-        if res_html.status_code == 200:
-            soup = BeautifulSoup(res_html.text, "html.parser")
-            btn_comprar = soup.find("button", {"name": "add"}) or soup.find("button", id=lambda x: x and "add-to-cart" in x.lower())
-            
-            if btn_comprar:
-                texto_btn = btn_comprar.get_text(strip=True).lower()
-                es_disabled = btn_comprar.has_attr("disabled") or btn_comprar.get("aria-disabled") == "true"
-                if not es_disabled and "sold out" not in texto_btn and "agotado" not in texto_btn:
-                    disponible = True
-
-            meta_precio = soup.find("meta", property="og:price:amount") or soup.find("meta", property="product:price:amount")
-            if meta_precio and meta_precio.get("content"):
-                try:
-                    precio_usd = float(meta_precio["content"])
-                except ValueError:
-                    pass
-    except Exception as e:
-        print(f"Error consultando HTML para {handle} en {tienda['nombre']}: {e}")
 
     return disponible, precio_usd, url_web
 
