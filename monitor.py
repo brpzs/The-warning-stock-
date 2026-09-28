@@ -21,6 +21,7 @@ TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID")
 ARCHIVO_ESTADO = "estado.json"
 TIPO_DE_CAMBIO_FALLBACK = 1520.00
 
+# TIENDAS CONFIGURADAS (Se agregó EMI Records UK/Global)
 TIENDAS = [
     {
         "id": "us",
@@ -38,6 +39,12 @@ TIENDAS = [
         "id": "uk",
         "nombre": "🇬🇧 Reino Unido / Europa",
         "base_url": "https://shopuk.thewarningband.com",
+        "country": "GB"
+    },
+    {
+        "id": "emi_records",
+        "nombre": "🔲 EMI Records Store",
+        "base_url": "https://emirecords.com",
         "country": "GB"
     }
 ]
@@ -220,7 +227,7 @@ def verificar_estado():
         enviar_discord(mensaje_final)
         enviar_telegram(mensaje_final)
     else:
-        print("ℹ️ Sin cambios de estado en ninguna región. No se envían mensajes.")
+        print("ℹ️ Sin cambios de estado in ninguna región. No se envían mensajes.")
 
     guardar_estado_actual(estado_actual)
 
