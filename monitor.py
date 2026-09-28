@@ -18,7 +18,8 @@ ARCHIVO_ESTADO = "estado.json"
 # Valor por defecto si la API de dólares no responde
 TIPO_DE_CAMBIO_FALLBACK = 1520.00
 
-VINILOS = [
+# Lista de productos principales a monitorear vía API de Shopify
+PRODUCTOS_SHOPIFY = [
     {
         "id": "ef_pink_halo_vinyl",
         "nombre": "Everything's Falling Pink Halo (Vinilo)",
@@ -36,6 +37,12 @@ VINILOS = [
         "nombre": "XXI Century Blood (Vinilo)",
         "handle": "century-blood-vinyl",
         "url": f"{BASE_URL}/products/century-blood-vinyl"
+    },
+    {
+        "id": "bluray_auditorio_nacional",
+        "nombre": "Live From Auditorio Nacional CDMX (Blu-Ray 4K UHD)",
+        "handle": "the-warning-live-from-auditorio-nacional-cdmx-documentary-blu-ray-4k-uhd",
+        "url": f"{BASE_URL}/products/the-warning-live-from-auditorio-nacional-cdmx-documentary-blu-ray-4k-uhd"
     }
 ]
 
@@ -132,8 +139,8 @@ def verificar_estado():
 
     reporte_lineas = []
 
-    # 1. Revisar Vinilos
-    for prod in VINILOS:
+    # 1. Revisar Productos de Shopify (Vinilos y Blu-Ray)
+    for prod in PRODUCTOS_SHOPIFY:
         disponible, precio_usd = obtener_datos_producto_shopify(prod["handle"])
         estado_actual[prod["id"]] = disponible
         info_precio = formatear_precio(precio_usd, tipo_cambio_actual)
