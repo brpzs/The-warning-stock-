@@ -1,16 +1,14 @@
 {
-    "ef_pink_halo_vinyl_us": false,
+    "ef_pink_halo_vinyl_us": true,
     "qotms_vinyl_us": false,
     "xxicb_vinyl_us": false,
-    "bluray_auditorio_nacional_us": false,
-    "ef_pink_halo_vinyl_mx": false,
+    "bluray_auditorio_nacional_us": true,
+    "ef_pink_halo_vinyl_mx": true,
     "qotms_vinyl_mx": false,
     "xxicb_vinyl_mx": false,
-    "bluray_auditorio_nacional_mx": false,
+    "bluray_auditorio_nacional_mx": true,
     "ef_pink_halo_vinyl_uk": false,
     "qotms_vinyl_uk": false,
     "xxicb_vinyl_uk": false,
-    "bluray_auditorio_nacional_uk": false,
-    "qotms_cd": false,
-    "xxicb_cd": false
+    "bluray_auditorio_nacional_uk": false
 }
