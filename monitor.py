@@ -20,6 +20,12 @@ TIPO_DE_CAMBIO_FALLBACK = 1520.00
 
 VINILOS = [
     {
+        "id": "ef_pink_halo_vinyl",
+        "nombre": "Everything's Falling Pink Halo (Vinilo)",
+        "handle": "everything-s-falling-pink-halo-vinyl",
+        "url": f"{BASE_URL}/products/everything-s-falling-pink-halo-vinyl"
+    },
+    {
         "id": "qotms_vinyl",
         "nombre": "Queen of the Murder Scene (Vinilo)",
         "handle": "queen-of-the-murder-scene-vinyl",
