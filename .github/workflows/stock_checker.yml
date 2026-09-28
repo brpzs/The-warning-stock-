@@ -25,9 +25,6 @@ jobs:
           python -m pip install --upgrade pip
           pip install requests
 
-      - name: Verificar archivos en el repositorio
-        run: ls -la
-
       - name: Ejecutar script de monitoreo
         env:
           DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
