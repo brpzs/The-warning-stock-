@@ -1,24 +1,9 @@
-def enviar_discord(mensaje):
-    # Sanitizamos el mensaje para Discord
-    payload = {
-        "content": mensaje,
-        "allowed_mentions": {"parse": ["everyone"]}
-    }
-    for url in WEBHOOKS:
-        if url and url.strip():
-            try:
-                res = requests.post(url.strip(), json=payload, timeout=10)
-                if res.status_code in [200, 204]:
-                    print("✅ Mensaje enviado exitosamente a servidor de Discord.")
-                else:
-                    print(f"⚠️ Error al enviar a Discord ({res.status_code}): {res.text}")
-            except Exception as e:
-                print(f"❌ Excepción enviando a Discord: {e}")
-
 def verificar_estado():
-    es_prueba_manual = os.environ.get("GITHUB_EVENT_NAME") == "workflow_dispatch"
-    tipo_cambio_actual = obtener_tipo_de_cambio_ars()
+    # Lee explícitamente la variable que nos manda GitHub Actions
+    evento_github = os.environ.get("GITHUB_EVENT_NAME", "")
+    es_prueba_manual = (evento_github == "workflow_dispatch")
 
+    tipo_cambio_actual = obtener_tipo_de_cambio_ars()
     estado_anterior = cargar_estado_anterior()
     estado_actual = {}
     hay_cambios = False
@@ -37,7 +22,13 @@ def verificar_estado():
             )
             
             estado_actual[clave_estado] = disp
-            if estado_anterior.get(clave_estado) != disp:
+            
+            # Comparamos si cambió respecto al estado guardado previamente
+            if clave_estado in estado_anterior:
+                if estado_anterior[clave_estado] != disp:
+                    hay_cambios = True
+            else:
+                # Si es la primera vez que se registra el archivo, marca que hubo cambio inicial
                 hay_cambios = True
 
             precio_fmt = formatear_precio(precio_usd, tipo_cambio_actual)
@@ -49,15 +40,15 @@ def verificar_estado():
 
         reportes_por_tienda.append("\n".join(lineas_tienda))
 
+    print(f"DEBUG: Es prueba manual? {es_prueba_manual} | Hubo cambios? {hay_cambios}")
+
+    # MANDA MENSAJE SI ES PRUEBA MANUAL O SI DETECTÓ CAMBIOS
     if es_prueba_manual or hay_cambios:
         encabezado = "🧪 **[PRUEBA MANUAL] Reporte de Stock por Regiones:**" if es_prueba_manual else "🚨 **¡Novedades de Stock detectadas!**"
         
         cuerpo_mensaje = "\n\n".join(reportes_por_tienda)
         
-        # Mensaje formateado para Discord (sin forzar mención bloqueante)
         mensaje_discord = f"{encabezado}\n\n{cuerpo_mensaje}"
-        
-        # Mensaje para Telegram
         mensaje_telegram = f"{encabezado}\n\n{cuerpo_mensaje}"
         
         enviar_discord(mensaje_discord)
