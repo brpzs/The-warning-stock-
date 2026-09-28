@@ -18,7 +18,7 @@ ARCHIVO_ESTADO = "estado.json"
 # Valor por defecto si la API de dólares no responde
 TIPO_DE_CAMBIO_FALLBACK = 1520.00
 
-# Lista de productos principales a monitorear vía API de Shopify
+# Lista de productos principales a monitorear vía Shopify / Web
 PRODUCTOS_SHOPIFY = [
     {
         "id": "ef_pink_halo_vinyl",
@@ -47,7 +47,7 @@ PRODUCTOS_SHOPIFY = [
 ]
 
 headers = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
 }
 
 def obtener_tipo_de_cambio_ars():
@@ -108,20 +108,64 @@ def enviar_telegram(mensaje):
         except Exception as e:
             print(f"❌ Excepción enviando a Telegram: {e}")
 
-def obtener_datos_producto_shopify(handle):
+def obtener_datos_producto_shopify(handle, url_producto):
+    """
+    Intenta verificar la disponibilidad revisando la API JSON de Shopify
+    y como respaldo inspecciona el HTML de la página.
+    """
+    disponible = False
+    precio_usd = 0.0
+
+    # 1. Intentar mediante API JSON de Shopify
     try:
         url_json = f"{BASE_URL}/products/{handle}.json"
         res = requests.get(url_json, headers=headers, timeout=10)
         if res.status_code == 200:
             datos = res.json().get("product", {})
             variantes = datos.get("variants", [])
-            if variantes:
+            
+            for v in variantes:
+                # Comprobar estado disponible o cantidad en inventario si existe
+                es_disponible = v.get("available", False)
+                inv_qty = v.get("inventory_quantity")
+                
+                if es_disponible or (inv_qty is not None and inv_qty > 0):
+                    disponible = True
+                    precio_usd = float(v.get("price", 0))
+                    break
+            
+            if not disponible and variantes:
                 precio_usd = float(variantes[0].get("price", 0))
-                disponible = any(v.get("available", False) for v in variantes)
+
+            if disponible:
                 return disponible, precio_usd
     except Exception as e:
-        print(f"Error extrayendo datos JSON de {handle}: {e}")
-    return False, 0.0
+        print(f"⚠️ Error consultando JSON para {handle}: {e}")
+
+    # 2. Respaldo mediante Scraping HTML si la API JSON devuelve no disponible o falla
+    try:
+        res_html = requests.get(url_producto, headers=headers, timeout=10)
+        if res_html.status_code == 200:
+            html = res_html.text.lower()
+            soup = BeautifulSoup(res_html.text, "html.parser")
+            
+            # Si contiene botones de "add to cart" o no dice "sold out" en el botón principal
+            tiene_add_to_cart = "add to cart" in html or "añadir al carrito" in html or "buy now" in html
+            esta_sold_out = "sold out" in html or "agotado" in html
+
+            # Si encontramos indicios de compra activos
+            if tiene_add_to_cart and not ("disabled" in html and esta_sold_out):
+                disponible = True
+
+            # Extraer precio si no se obtuvo previamente
+            if precio_usd == 0.0:
+                precio_meta = soup.find("meta", property="og:price:amount") or soup.find("meta", property="product:price:amount")
+                if precio_meta and precio_meta.get("content"):
+                    precio_usd = float(precio_meta["content"])
+    except Exception as e:
+        print(f"⚠️ Error en respaldo HTML para {handle}: {e}")
+
+    return disponible, precio_usd
 
 def formatear_precio(precio_usd, tipo_cambio):
     if precio_usd > 0:
@@ -141,7 +185,7 @@ def verificar_estado():
 
     # 1. Revisar Productos de Shopify (Vinilos y Blu-Ray)
     for prod in PRODUCTOS_SHOPIFY:
-        disponible, precio_usd = obtener_datos_producto_shopify(prod["handle"])
+        disponible, precio_usd = obtener_datos_producto_shopify(prod["handle"], prod["url"])
         estado_actual[prod["id"]] = disponible
         info_precio = formatear_precio(precio_usd, tipo_cambio_actual)
         
